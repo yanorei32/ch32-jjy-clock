@@ -39,7 +39,6 @@ async fn display_task(
 
     Timer::after_millis(100).await;
 
-
     // Function Set
     rs.set_low();
     rw.set_low();
@@ -51,9 +50,9 @@ async fn display_task(
     db2.set_low(); // F
     db1.set_low(); // X
     db0.set_low(); // X
-    Timer::after_millis(10).await;
+    Timer::after_micros(5).await;
     enable.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(100).await;
     enable.set_low();
 
     // Display ON/OFF
@@ -66,10 +65,10 @@ async fn display_task(
     db3.set_high();
     db2.set_high(); // Display ON/OFF
     db1.set_low(); // Cursor ON/OFF
-    db0.set_high(); // Brink ON/OFF
-    Timer::after_millis(10).await;
+    db0.set_low(); // Brink ON/OFF
+    Timer::after_micros(5).await;
     enable.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(100).await;
     enable.set_low();
 
     // Display Clear
@@ -83,11 +82,10 @@ async fn display_task(
     db2.set_low();
     db1.set_low();
     db0.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(5).await;
     enable.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(1530).await;
     enable.set_low();
-
 
     // Entry Mode Set
     rs.set_low();
@@ -100,26 +98,81 @@ async fn display_task(
     db2.set_high();
     db1.set_high(); // Cursor Moving Direction (high: inc, low: dec)
     db0.set_low(); // Speify Shift of Display
-    Timer::after_millis(10).await;
+    Timer::after_micros(5).await;
     enable.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(1000).await;
     enable.set_low();
 
-    // Send Data
-    rs.set_high();
+    for n in 0..24 {
+        // Send Data
+        rs.set_high();
+        rw.set_low();
+        db7.set_high();
+        db6.set_low();
+        db5.set_high();
+        db4.set_high();
+        db3.set_low();
+        db2.set_low();
+        db1.set_low();
+        db0.set_high();
+        Timer::after_micros(5).await;
+        enable.set_high();
+        Timer::after_micros(1000).await;
+        enable.set_low();
+    }
+
+    for n in 0..24 {
+        // Send Data
+        rs.set_high();
+        rw.set_low();
+        db7.set_high();
+        db6.set_low();
+        db5.set_high();
+        db4.set_high();
+        db3.set_low();
+        db2.set_low();
+        db1.set_high();
+        db0.set_low();
+        Timer::after_micros(5).await;
+        enable.set_high();
+        Timer::after_micros(1000).await;
+        enable.set_low();
+    }
+    Timer::after_secs(3).await;
+
+    // Display Clear
+    rs.set_low();
     rw.set_low();
-    db7.set_high();
+    db7.set_low();
     db6.set_low();
-    db5.set_high();
-    db4.set_high();
+    db5.set_low();
+    db4.set_low();
     db3.set_low();
     db2.set_low();
     db1.set_low();
     db0.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(5).await;
     enable.set_high();
-    Timer::after_millis(10).await;
+    Timer::after_micros(1530).await;
     enable.set_low();
+
+    for n in 0..24 {
+        // Send Data
+        rs.set_high();
+        rw.set_low();
+        db7.set_high();
+        db6.set_low();
+        db5.set_high();
+        db4.set_high();
+        db3.set_low();
+        db2.set_low();
+        db1.set_high();
+        db0.set_low();
+        Timer::after_micros(5).await;
+        enable.set_high();
+        Timer::after_micros(1000).await;
+        enable.set_low();
+    }
 }
 
 #[embassy_executor::main(entry = "ch32_hal::entry")]
