@@ -12,15 +12,192 @@ use embassy_time::{Instant, Timer};
 use panic_halt as _;
 
 #[embassy_executor::task]
-async fn blink(pin: Peri<'static, AnyPin>, interval_ms: u64) {
-    let mut led = Output::new(pin, Level::Low, Default::default());
+async fn display_task(
+    rs: Peri<'static, AnyPin>,
+    rw: Peri<'static, AnyPin>,
+    enable: Peri<'static, AnyPin>,
+    db4: Peri<'static, AnyPin>,
+    db5: Peri<'static, AnyPin>,
+    db6: Peri<'static, AnyPin>,
+    db7: Peri<'static, AnyPin>,
+) {
+    let mut rs = Output::new(rs, Level::Low, Default::default());
+    let mut rw = Output::new(rw, Level::Low, Default::default());
+    let mut enable = Output::new(enable, Level::Low, Default::default());
+    let mut db4 = Output::new(db4, Level::Low, Default::default());
+    let mut db5 = Output::new(db5, Level::Low, Default::default());
+    let mut db6 = Output::new(db6, Level::Low, Default::default());
+    let mut db7 = Output::new(db7, Level::Low, Default::default());
 
-    loop {
-        led.set_high();
-        Timer::after_millis(interval_ms).await;
-        led.set_low();
-        Timer::after_millis(interval_ms).await;
-    }
+    Timer::after_millis(100).await;
+    // Function Set
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_high();
+    db4.set_low();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_high();
+    db4.set_low();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_high();
+    db6.set_low();
+    db5.set_low();
+    db4.set_low();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // Display ON/OFF Control
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_low();
+    db4.set_low();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_high();
+    db6.set_high(); // Display on (high) / Display Off (low)
+    db5.set_low(); // cursor on (high) / off (low)
+    db4.set_low(); // brink on (high) / off (low)
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // DIsplay Clear
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_low();
+    db4.set_low();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_low();
+    db4.set_high();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // Entry Mode Set
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_low();
+    db4.set_low();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // send
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_high();
+    db5.set_high(); // Cursor Moving Direction (High: Inc, Low: Dec)
+    db4.set_low();  // Specify Shift of Display (High: shifted, Low: not shifted)
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // // Set CGRAM Address
+    //
+    // // send
+    // rs.set_low();
+    // rw.set_low();
+    // db7.set_low();
+    // db6.set_high();
+    // db5.set_low();
+    // db4.set_low();
+    // Timer::after_millis(10).await;
+    // enable.set_high();
+    // Timer::after_millis(10).await;
+    // enable.set_low();
+    //
+    // // send
+    // rs.set_low();
+    // rw.set_low();
+    // db7.set_low();
+    // db6.set_low();
+    // db5.set_low();
+    // db4.set_low();
+    // Timer::after_millis(10).await;
+    // enable.set_high();
+    // Timer::after_millis(10).await;
+    // enable.set_low();
+    //
+    // // Send CG RAM DATA
+    //
+    // // send
+    // rs.set_high();
+    // rw.set_low();
+    // db7.set_low();
+    // db6.set_high();
+    // db5.set_high(); // Cursor Moving Direction (High: Inc, Low: Dec)
+    // db4.set_low();  // Specify Shift of Display (High: shifted, Low: not shifted)
+    // Timer::after_millis(10).await;
+    // enable.set_high();
+    // Timer::after_millis(10).await;
+    // enable.set_low();
+    //
+    // // send
+    // rs.set_high();
+    // rw.set_low();
+    // db7.set_low();
+    // db6.set_high();
+    // db5.set_high(); // Cursor Moving Direction (High: Inc, Low: Dec)
+    // db4.set_low();  // Specify Shift of Display (High: shifted, Low: not shifted)
+    // Timer::after_millis(10).await;
+    // enable.set_high();
+    // Timer::after_millis(10).await;
+    // enable.set_low();
+    //
 }
 
 #[embassy_executor::main(entry = "ch32_hal::entry")]
@@ -29,8 +206,15 @@ async fn main(spawner: Spawner) -> ! {
 
     let p = ch32_hal::init(Config::default());
 
-    // Adjust the LED GPIO according to your board
-    spawner.spawn(blink(p.PA1.into(), 100)).unwrap();
+    spawner.spawn(display_task(
+        p.PA2.into(), // rs
+        p.PA3.into(), // rw
+        p.PA4.into(), // enable
+        p.PA5.into(), // d4
+        p.PA6.into(), // d5
+        p.PA7.into(), // d6
+        p.PB0.into(), // d7
+    )).unwrap();
 
     // 外部割り込みを使用する場合のタスク
     // ExtiInputを作成するために、ペリフェラル、EXTIライン、プル設定が必要
