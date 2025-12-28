@@ -16,6 +16,10 @@ async fn display_task(
     rs: Peri<'static, AnyPin>,
     rw: Peri<'static, AnyPin>,
     enable: Peri<'static, AnyPin>,
+    db0: Peri<'static, AnyPin>,
+    db1: Peri<'static, AnyPin>,
+    db2: Peri<'static, AnyPin>,
+    db3: Peri<'static, AnyPin>,
     db4: Peri<'static, AnyPin>,
     db5: Peri<'static, AnyPin>,
     db6: Peri<'static, AnyPin>,
@@ -24,180 +28,98 @@ async fn display_task(
     let mut rs = Output::new(rs, Level::Low, Default::default());
     let mut rw = Output::new(rw, Level::Low, Default::default());
     let mut enable = Output::new(enable, Level::Low, Default::default());
+    let mut db0 = Output::new(db0, Level::Low, Default::default());
+    let mut db1 = Output::new(db1, Level::Low, Default::default());
+    let mut db2 = Output::new(db2, Level::Low, Default::default());
+    let mut db3 = Output::new(db3, Level::Low, Default::default());
     let mut db4 = Output::new(db4, Level::Low, Default::default());
     let mut db5 = Output::new(db5, Level::Low, Default::default());
     let mut db6 = Output::new(db6, Level::Low, Default::default());
     let mut db7 = Output::new(db7, Level::Low, Default::default());
 
     Timer::after_millis(100).await;
+
+
     // Function Set
-
-    // send
     rs.set_low();
     rw.set_low();
     db7.set_low();
     db6.set_low();
     db5.set_high();
-    db4.set_low();
-    Timer::after_millis(10).await;
-    enable.set_high();
-    Timer::after_millis(10).await;
-    enable.set_low();
-
-    // send
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_high();
-    db4.set_low();
-    Timer::after_millis(10).await;
-    enable.set_high();
-    Timer::after_millis(10).await;
-    enable.set_low();
-
-    // send
-    rs.set_low();
-    rw.set_low();
-    db7.set_high();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    Timer::after_millis(10).await;
-    enable.set_high();
-    Timer::after_millis(10).await;
-    enable.set_low();
-
-    // Display ON/OFF Control
-
-    // send
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    Timer::after_millis(10).await;
-    enable.set_high();
-    Timer::after_millis(10).await;
-    enable.set_low();
-
-    // send
-    rs.set_low();
-    rw.set_low();
-    db7.set_high();
-    db6.set_high(); // Display on (high) / Display Off (low)
-    db5.set_low(); // cursor on (high) / off (low)
-    db4.set_low(); // brink on (high) / off (low)
-    Timer::after_millis(10).await;
-    enable.set_high();
-    Timer::after_millis(10).await;
-    enable.set_low();
-
-    // DIsplay Clear
-
-    // send
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    Timer::after_millis(10).await;
-    enable.set_high();
-    Timer::after_millis(10).await;
-    enable.set_low();
-
-    // send
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
     db4.set_high();
+    db3.set_high(); // N
+    db2.set_low(); // F
+    db1.set_low(); // X
+    db0.set_low(); // X
     Timer::after_millis(10).await;
     enable.set_high();
     Timer::after_millis(10).await;
     enable.set_low();
+
+    // Display ON/OFF
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_low();
+    db4.set_low();
+    db3.set_high();
+    db2.set_high(); // Display ON/OFF
+    db1.set_low(); // Cursor ON/OFF
+    db0.set_high(); // Brink ON/OFF
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
+    // Display Clear
+    rs.set_low();
+    rw.set_low();
+    db7.set_low();
+    db6.set_low();
+    db5.set_low();
+    db4.set_low();
+    db3.set_low();
+    db2.set_low();
+    db1.set_low();
+    db0.set_high();
+    Timer::after_millis(10).await;
+    enable.set_high();
+    Timer::after_millis(10).await;
+    enable.set_low();
+
 
     // Entry Mode Set
-
-    // send
     rs.set_low();
     rw.set_low();
     db7.set_low();
     db6.set_low();
     db5.set_low();
     db4.set_low();
+    db3.set_low();
+    db2.set_high();
+    db1.set_high(); // Cursor Moving Direction (high: inc, low: dec)
+    db0.set_low(); // Speify Shift of Display
     Timer::after_millis(10).await;
     enable.set_high();
     Timer::after_millis(10).await;
     enable.set_low();
 
-    // send
-    rs.set_low();
+    // Send Data
+    rs.set_high();
     rw.set_low();
-    db7.set_low();
-    db6.set_high();
-    db5.set_high(); // Cursor Moving Direction (High: Inc, Low: Dec)
-    db4.set_low();  // Specify Shift of Display (High: shifted, Low: not shifted)
+    db7.set_high();
+    db6.set_low();
+    db5.set_high();
+    db4.set_high();
+    db3.set_low();
+    db2.set_low();
+    db1.set_low();
+    db0.set_high();
     Timer::after_millis(10).await;
     enable.set_high();
     Timer::after_millis(10).await;
     enable.set_low();
-
-    // // Set CGRAM Address
-    //
-    // // send
-    // rs.set_low();
-    // rw.set_low();
-    // db7.set_low();
-    // db6.set_high();
-    // db5.set_low();
-    // db4.set_low();
-    // Timer::after_millis(10).await;
-    // enable.set_high();
-    // Timer::after_millis(10).await;
-    // enable.set_low();
-    //
-    // // send
-    // rs.set_low();
-    // rw.set_low();
-    // db7.set_low();
-    // db6.set_low();
-    // db5.set_low();
-    // db4.set_low();
-    // Timer::after_millis(10).await;
-    // enable.set_high();
-    // Timer::after_millis(10).await;
-    // enable.set_low();
-    //
-    // // Send CG RAM DATA
-    //
-    // // send
-    // rs.set_high();
-    // rw.set_low();
-    // db7.set_low();
-    // db6.set_high();
-    // db5.set_high(); // Cursor Moving Direction (High: Inc, Low: Dec)
-    // db4.set_low();  // Specify Shift of Display (High: shifted, Low: not shifted)
-    // Timer::after_millis(10).await;
-    // enable.set_high();
-    // Timer::after_millis(10).await;
-    // enable.set_low();
-    //
-    // // send
-    // rs.set_high();
-    // rw.set_low();
-    // db7.set_low();
-    // db6.set_high();
-    // db5.set_high(); // Cursor Moving Direction (High: Inc, Low: Dec)
-    // db4.set_low();  // Specify Shift of Display (High: shifted, Low: not shifted)
-    // Timer::after_millis(10).await;
-    // enable.set_high();
-    // Timer::after_millis(10).await;
-    // enable.set_low();
-    //
 }
 
 #[embassy_executor::main(entry = "ch32_hal::entry")]
@@ -210,10 +132,14 @@ async fn main(spawner: Spawner) -> ! {
         p.PA2.into(), // rs
         p.PA3.into(), // rw
         p.PA4.into(), // enable
-        p.PA5.into(), // d4
-        p.PA6.into(), // d5
-        p.PA7.into(), // d6
-        p.PB0.into(), // d7
+        p.PA5.into(), // d0
+        p.PA6.into(), // d1
+        p.PA7.into(), // d2
+        p.PB0.into(), // d3
+        p.PB1.into(), // d4
+        p.PA8.into(), // d5
+        p.PA9.into(), // d6
+        p.PA10.into(), // d7
     )).unwrap();
 
     // 外部割り込みを使用する場合のタスク
