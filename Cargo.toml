@@ -26,6 +26,7 @@ qingke-rt = "0.6.1"
 qingke = "0.6.1"
 embedded-hal = "1.0.0"
 panic-halt = "1.0.0"
+embassy-sync = "0.7.2"
 
 [profile.dev]
 opt-level = 's'

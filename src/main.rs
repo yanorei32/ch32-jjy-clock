@@ -11,6 +11,11 @@ use embassy_executor::Spawner;
 use embassy_time::{Instant, Timer};
 use panic_halt as _;
 
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
+
+static DRAW_CHANNEL: Channel<CriticalSectionRawMutex, StatusUpdate, 4> = Channel::new();
+
 #[inline]
 fn bool_to_level(b: bool) -> Level {
     match b {
@@ -38,6 +43,11 @@ struct DisplayPins {
     db5: Output<'static>,
     db6: Output<'static>,
     db7: Output<'static>,
+}
+
+enum StatusUpdate {
+    JJYStatus(bool),
+    TimeBaseUpdate(TimeBase),
 }
 
 async fn send_display_bus(pins: &mut DisplayPins, rs: bool, rw: bool, data: u8) {
@@ -102,26 +112,72 @@ async fn display_task(
     // Entry Mode Set
     send_display_bus(&mut pins, false, false, 0b0000_0110).await;
 
+    let mut timebase = None;
+    let mut jjy_status = false;
 
-    for _ in 0..24 {
-        // Send Data
-        send_display_bus(&mut pins, true, false, 0b1011_0001).await;
-    }
+    loop {
+        match DRAW_CHANNEL.receiver().receive().await {
+            StatusUpdate::TimeBaseUpdate(base) => {
+                timebase = Some(base);
+            }
+            StatusUpdate::JJYStatus(status) => {
+                jjy_status = status;
+            }
+        }
 
-    for _ in 0..24 {
-        // Send Data
-        send_display_bus(&mut pins, true, false, 0b1011_0010).await;
-    }
+        // Display Clear
+        send_display_bus(&mut pins, false, false, 0b0000_0001).await;
+        Timer::after_micros(530).await;
 
-    Timer::after_secs(3).await;
+        match timebase {
+            Some(timebase) => {
+                let now = Instant::now().as_millis();
+                // +25 is dirty hack
+                let diff = ((now - timebase.system_time + 25) / 1000) as u32;
 
-    // Display Clear
-    send_display_bus(&mut pins, false, false, 0b0000_0001).await;
-    Timer::after_micros(530).await;
+                let remaining = (timebase.clock + diff) % (60 * 60 * 24);
+                let hour = remaining / (60 * 60);
+                let remaining = remaining % (60 * 60);
+                let minute = remaining / 60;
+                let remaining = remaining % 60;
+                let sec = remaining;
 
-    for _ in 0..24 {
-        // Send Data
-        send_display_bus(&mut pins, true, false, 0b1011_0010).await;
+                let hour_h = (hour / 10) as u8;
+                let hour_l = (hour % 10) as u8;
+                let minute_h = (minute / 10) as u8;
+                let minute_l = (minute % 10) as u8;
+                let sec_h = (sec / 10) as u8;
+                let sec_l = (sec % 10) as u8;
+
+                send_display_bus(&mut pins, true, false, 0b0011_0000 + hour_h).await;
+                send_display_bus(&mut pins, true, false, 0b0011_0000 + hour_l).await;
+                send_display_bus(&mut pins, true, false, 0b0011_1010).await;
+                send_display_bus(&mut pins, true, false, 0b0011_0000 + minute_h).await;
+                send_display_bus(&mut pins, true, false, 0b0011_0000 + minute_l).await;
+                send_display_bus(&mut pins, true, false, 0b0011_1010).await;
+                send_display_bus(&mut pins, true, false, 0b0011_0000 + sec_h).await;
+                send_display_bus(&mut pins, true, false, 0b0011_0000 + sec_l).await;
+                for _ in 8..40 {
+                    send_display_bus(&mut pins, true, false, 0b0010_0000).await;
+                }
+            }
+            None => {
+                // "Sync"
+                send_display_bus(&mut pins, true, false, 0b0101_0011).await;
+                send_display_bus(&mut pins, true, false, 0b0111_1001).await;
+                send_display_bus(&mut pins, true, false, 0b0110_1110).await;
+                send_display_bus(&mut pins, true, false, 0b0110_0011).await;
+                for _ in 4..40 {
+                    send_display_bus(&mut pins, true, false, 0b0010_0000).await;
+                }
+            }
+        }
+
+        if jjy_status {
+            send_display_bus(&mut pins, true, false, 0b1111_1111).await;
+        } else {
+            send_display_bus(&mut pins, true, false, 0b0010_0000).await;
+        }
     }
 }
 
@@ -187,12 +243,18 @@ impl BitWidth {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct TimeBase {
+    system_time: u64,
+    clock: u32,
+}
+
 #[embassy_executor::task]
 async fn jjy_task(mut exti_button: ExtiInput<'static>) {
     const ALLOWED_ERROR: f32 = 0.20;
 
     let mut buffer = [BitWidth::Unknown; 60];
-    let mut cursor = 0;
+    let mut cursor = 0usize;
     let mut recording = false;
     let mut previous_is_marker = false;
 
@@ -205,10 +267,21 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
 
     loop {
         exti_button.wait_for_falling_edge().await;
+
         let up_at = Instant::now().as_millis();
 
+        DRAW_CHANNEL
+            .sender()
+            .send(StatusUpdate::JJYStatus(true))
+            .await;
+
         exti_button.wait_for_rising_edge().await;
+
         let down_at = Instant::now().as_millis();
+        DRAW_CHANNEL
+            .sender()
+            .send(StatusUpdate::JJYStatus(false))
+            .await;
 
         let elapsed_ms = (down_at - up_at) as u32;
 
@@ -370,6 +443,14 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
                     recording = false;
                     continue;
                 };
+
+                DRAW_CHANNEL
+                    .sender()
+                    .send(StatusUpdate::TimeBaseUpdate(TimeBase {
+                        clock: minute * 60 + hour * 3600 + (cursor as u32),
+                        system_time: up_at,
+                    }))
+                    .await;
 
                 println!("{hour:0>2}:{minute:0>2} (day: {day})");
             }
