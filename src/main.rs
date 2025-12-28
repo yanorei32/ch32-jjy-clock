@@ -11,6 +11,54 @@ use embassy_executor::Spawner;
 use embassy_time::{Instant, Timer};
 use panic_halt as _;
 
+#[inline]
+fn bool_to_level(b: bool) -> Level {
+    match b {
+        true => Level::High,
+        false => Level::Low,
+    }
+}
+
+fn u8_to_level(v: u8) -> Level {
+    match v {
+        0 => Level::Low,
+        _ => Level::High,
+    }
+}
+
+struct DisplayPins {
+    rs: Output<'static>,
+    rw: Output<'static>,
+    enable: Output<'static>,
+    db0: Output<'static>,
+    db1: Output<'static>,
+    db2: Output<'static>,
+    db3: Output<'static>,
+    db4: Output<'static>,
+    db5: Output<'static>,
+    db6: Output<'static>,
+    db7: Output<'static>,
+}
+
+async fn send_display_bus(pins: &mut DisplayPins, rs: bool, rw: bool, data: u8) {
+    pins.rs.set_level(bool_to_level(rs));
+    pins.rw.set_level(bool_to_level(rw));
+    pins.db7.set_level(u8_to_level(data & 0x80));
+    pins.db6.set_level(u8_to_level(data & 0x40));
+    pins.db5.set_level(u8_to_level(data & 0x20));
+    pins.db4.set_level(u8_to_level(data & 0x10));
+    pins.db3.set_level(u8_to_level(data & 0x08));
+    pins.db2.set_level(u8_to_level(data & 0x04));
+    pins.db1.set_level(u8_to_level(data & 0x02));
+    pins.db0.set_level(u8_to_level(data & 0x01));
+
+    Timer::after_micros(5).await;
+    pins.enable.set_high();
+
+    Timer::after_micros(1000).await;
+    pins.enable.set_low();
+}
+
 #[embassy_executor::task]
 async fn display_task(
     rs: Peri<'static, AnyPin>,
@@ -25,153 +73,55 @@ async fn display_task(
     db6: Peri<'static, AnyPin>,
     db7: Peri<'static, AnyPin>,
 ) {
-    let mut rs = Output::new(rs, Level::Low, Default::default());
-    let mut rw = Output::new(rw, Level::Low, Default::default());
-    let mut enable = Output::new(enable, Level::Low, Default::default());
-    let mut db0 = Output::new(db0, Level::Low, Default::default());
-    let mut db1 = Output::new(db1, Level::Low, Default::default());
-    let mut db2 = Output::new(db2, Level::Low, Default::default());
-    let mut db3 = Output::new(db3, Level::Low, Default::default());
-    let mut db4 = Output::new(db4, Level::Low, Default::default());
-    let mut db5 = Output::new(db5, Level::Low, Default::default());
-    let mut db6 = Output::new(db6, Level::Low, Default::default());
-    let mut db7 = Output::new(db7, Level::Low, Default::default());
+    let mut pins = DisplayPins {
+        rs: Output::new(rs, Level::Low, Default::default()),
+        rw: Output::new(rw, Level::Low, Default::default()),
+        enable: Output::new(enable, Level::Low, Default::default()),
+        db0: Output::new(db0, Level::Low, Default::default()),
+        db1: Output::new(db1, Level::Low, Default::default()),
+        db2: Output::new(db2, Level::Low, Default::default()),
+        db3: Output::new(db3, Level::Low, Default::default()),
+        db4: Output::new(db4, Level::Low, Default::default()),
+        db5: Output::new(db5, Level::Low, Default::default()),
+        db6: Output::new(db6, Level::Low, Default::default()),
+        db7: Output::new(db7, Level::Low, Default::default()),
+    };
 
     Timer::after_millis(100).await;
 
     // Function Set
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_high();
-    db4.set_high();
-    db3.set_high(); // N
-    db2.set_low(); // F
-    db1.set_low(); // X
-    db0.set_low(); // X
-    Timer::after_micros(5).await;
-    enable.set_high();
-    Timer::after_micros(100).await;
-    enable.set_low();
+    send_display_bus(&mut pins, false, false, 0b0011_1000).await;
 
-    // Display ON/OFF
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    db3.set_high();
-    db2.set_high(); // Display ON/OFF
-    db1.set_low(); // Cursor ON/OFF
-    db0.set_low(); // Brink ON/OFF
-    Timer::after_micros(5).await;
-    enable.set_high();
-    Timer::after_micros(100).await;
-    enable.set_low();
+    // Display ON/OFF Control
+    send_display_bus(&mut pins, false, false, 0b0000_1100).await;
 
     // Display Clear
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    db3.set_low();
-    db2.set_low();
-    db1.set_low();
-    db0.set_high();
-    Timer::after_micros(5).await;
-    enable.set_high();
-    Timer::after_micros(1530).await;
-    enable.set_low();
+    send_display_bus(&mut pins, false, false, 0b0000_0001).await;
+    Timer::after_micros(530).await;
 
     // Entry Mode Set
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    db3.set_low();
-    db2.set_high();
-    db1.set_high(); // Cursor Moving Direction (high: inc, low: dec)
-    db0.set_low(); // Speify Shift of Display
-    Timer::after_micros(5).await;
-    enable.set_high();
-    Timer::after_micros(1000).await;
-    enable.set_low();
+    send_display_bus(&mut pins, false, false, 0b0000_0110).await;
 
-    for n in 0..24 {
+
+    for _ in 0..24 {
         // Send Data
-        rs.set_high();
-        rw.set_low();
-        db7.set_high();
-        db6.set_low();
-        db5.set_high();
-        db4.set_high();
-        db3.set_low();
-        db2.set_low();
-        db1.set_low();
-        db0.set_high();
-        Timer::after_micros(5).await;
-        enable.set_high();
-        Timer::after_micros(1000).await;
-        enable.set_low();
+        send_display_bus(&mut pins, true, false, 0b1011_0001).await;
     }
 
-    for n in 0..24 {
+    for _ in 0..24 {
         // Send Data
-        rs.set_high();
-        rw.set_low();
-        db7.set_high();
-        db6.set_low();
-        db5.set_high();
-        db4.set_high();
-        db3.set_low();
-        db2.set_low();
-        db1.set_high();
-        db0.set_low();
-        Timer::after_micros(5).await;
-        enable.set_high();
-        Timer::after_micros(1000).await;
-        enable.set_low();
+        send_display_bus(&mut pins, true, false, 0b1011_0010).await;
     }
+
     Timer::after_secs(3).await;
 
     // Display Clear
-    rs.set_low();
-    rw.set_low();
-    db7.set_low();
-    db6.set_low();
-    db5.set_low();
-    db4.set_low();
-    db3.set_low();
-    db2.set_low();
-    db1.set_low();
-    db0.set_high();
-    Timer::after_micros(5).await;
-    enable.set_high();
-    Timer::after_micros(1530).await;
-    enable.set_low();
+    send_display_bus(&mut pins, false, false, 0b0000_0001).await;
+    Timer::after_micros(530).await;
 
-    for n in 0..24 {
+    for _ in 0..24 {
         // Send Data
-        rs.set_high();
-        rw.set_low();
-        db7.set_high();
-        db6.set_low();
-        db5.set_high();
-        db4.set_high();
-        db3.set_low();
-        db2.set_low();
-        db1.set_high();
-        db0.set_low();
-        Timer::after_micros(5).await;
-        enable.set_high();
-        Timer::after_micros(1000).await;
-        enable.set_low();
+        send_display_bus(&mut pins, true, false, 0b1011_0010).await;
     }
 }
 
@@ -181,19 +131,21 @@ async fn main(spawner: Spawner) -> ! {
 
     let p = ch32_hal::init(Config::default());
 
-    spawner.spawn(display_task(
-        p.PA2.into(), // rs
-        p.PA3.into(), // rw
-        p.PA4.into(), // enable
-        p.PA5.into(), // d0
-        p.PA6.into(), // d1
-        p.PA7.into(), // d2
-        p.PB0.into(), // d3
-        p.PB1.into(), // d4
-        p.PA8.into(), // d5
-        p.PA9.into(), // d6
-        p.PA10.into(), // d7
-    )).unwrap();
+    spawner
+        .spawn(display_task(
+            p.PA2.into(),  // rs
+            p.PA3.into(),  // rw
+            p.PA4.into(),  // enable
+            p.PA5.into(),  // d0
+            p.PA6.into(),  // d1
+            p.PA7.into(),  // d2
+            p.PB0.into(),  // d3
+            p.PB1.into(),  // d4
+            p.PA8.into(),  // d5
+            p.PA9.into(),  // d6
+            p.PA10.into(), // d7
+        ))
+        .unwrap();
 
     // 外部割り込みを使用する場合のタスク
     // ExtiInputを作成するために、ペリフェラル、EXTIライン、プル設定が必要
@@ -287,7 +239,6 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
         } else {
             previous_is_marker = false;
         }
-
 
         if recording {
             if cursor == 38 {
@@ -411,7 +362,7 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
                         return None;
                     }
 
-                    Some(( minute, hour, day ))
+                    Some((minute, hour, day))
                 }
 
                 let Some((minute, hour, day)) = to_minute_hour_day(&buffer) else {
