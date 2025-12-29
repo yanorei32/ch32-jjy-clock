@@ -13,6 +13,7 @@ use panic_halt as _;
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_futures::select::{select, Either};
 
 static DRAW_CHANNEL: Channel<CriticalSectionRawMutex, StatusUpdate, 4> = Channel::new();
 
@@ -112,17 +113,43 @@ async fn display_task(
     // Entry Mode Set
     send_display_bus(&mut pins, false, false, 0b0000_0110).await;
 
-    let mut timebase = None;
+    // "Sync"
+    send_display_bus(&mut pins, true, false, 0b0101_0011).await;
+    send_display_bus(&mut pins, true, false, 0b0111_1001).await;
+    send_display_bus(&mut pins, true, false, 0b0110_1110).await;
+    send_display_bus(&mut pins, true, false, 0b0110_0011).await;
+
+    let mut timebase: Option<TimeBase> = None;
     let mut jjy_status = false;
 
     loop {
-        match DRAW_CHANNEL.receiver().receive().await {
-            StatusUpdate::TimeBaseUpdate(base) => {
-                timebase = Some(base);
+        match timebase {
+            Some(b) => {
+                let now = Instant::now().as_millis();
+                let next_update_after = 1000 - ((now - b.system_time - 50) % 1000);
+
+                let next_update_waiter = Timer::after_millis(next_update_after);
+
+                let receiver = DRAW_CHANNEL.receiver();
+
+                match select(next_update_waiter, receiver.receive()).await {
+                    Either::First(_) => {}
+                    Either::Second(StatusUpdate::TimeBaseUpdate(base)) => {
+                        timebase = Some(base);
+                    }
+                    Either::Second(StatusUpdate::JJYStatus(status)) => {
+                        jjy_status = status;
+                    }
+                }
             }
-            StatusUpdate::JJYStatus(status) => {
-                jjy_status = status;
-            }
+            None => match DRAW_CHANNEL.receiver().receive().await {
+                StatusUpdate::TimeBaseUpdate(base) => {
+                    timebase = Some(base);
+                }
+                StatusUpdate::JJYStatus(status) => {
+                    jjy_status = status;
+                }
+            },
         }
 
         // Display Clear
@@ -132,8 +159,7 @@ async fn display_task(
         match timebase {
             Some(timebase) => {
                 let now = Instant::now().as_millis();
-                // +25 is dirty hack
-                let diff = ((now - timebase.system_time + 25) / 1000) as u32;
+                let diff = ((now - timebase.system_time) / 1000) as u32;
 
                 let remaining = (timebase.clock + diff) % (60 * 60 * 24);
                 let hour = remaining / (60 * 60);
