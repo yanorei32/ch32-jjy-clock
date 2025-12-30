@@ -11,11 +11,11 @@ use embassy_executor::Spawner;
 use embassy_time::{Instant, Timer};
 use panic_halt as _;
 
+use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_futures::select::{select, Either};
 
-static DRAW_CHANNEL: Channel<CriticalSectionRawMutex, StatusUpdate, 4> = Channel::new();
+static DRAW_CHANNEL: Channel<CriticalSectionRawMutex, StatusUpdate, 8> = Channel::new();
 
 #[inline]
 fn bool_to_level(b: bool) -> Level {
@@ -47,7 +47,8 @@ struct DisplayPins {
 }
 
 enum StatusUpdate {
-    JJYStatus(bool),
+    JJYOn(u8),
+    JJYOff(BitWidth),
     TimeBaseUpdate(TimeBase),
 }
 
@@ -121,6 +122,8 @@ async fn display_task(
 
     let mut timebase: Option<TimeBase> = None;
     let mut jjy_status = false;
+    let mut cursor = 0;
+    let mut latest_bitwidth = BitWidth::Unknown;
 
     loop {
         match timebase {
@@ -137,8 +140,13 @@ async fn display_task(
                     Either::Second(StatusUpdate::TimeBaseUpdate(base)) => {
                         timebase = Some(base);
                     }
-                    Either::Second(StatusUpdate::JJYStatus(status)) => {
-                        jjy_status = status;
+                    Either::Second(StatusUpdate::JJYOn(c)) => {
+                        jjy_status = true;
+                        cursor = c;
+                    }
+                    Either::Second(StatusUpdate::JJYOff(bit_width)) => {
+                        jjy_status = false;
+                        latest_bitwidth = bit_width;
                     }
                 }
             }
@@ -146,8 +154,13 @@ async fn display_task(
                 StatusUpdate::TimeBaseUpdate(base) => {
                     timebase = Some(base);
                 }
-                StatusUpdate::JJYStatus(status) => {
-                    jjy_status = status;
+                StatusUpdate::JJYOn(c) => {
+                    jjy_status = true;
+                    cursor = c;
+                }
+                StatusUpdate::JJYOff(bit_width) => {
+                    jjy_status = false;
+                    latest_bitwidth = bit_width;
                 }
             },
         }
@@ -204,6 +217,20 @@ async fn display_task(
         } else {
             send_display_bus(&mut pins, true, false, 0b0010_0000).await;
         }
+
+        let character = match latest_bitwidth {
+            BitWidth::Long => 0b0100_1100,
+            BitWidth::Short => 0b0101_0011,
+            BitWidth::Marker => 0b0100_1101,
+            BitWidth::Unknown => 0b0011_1111,
+        };
+
+        send_display_bus(&mut pins, true, false, character).await;
+
+        let cursor_h = cursor / 10;
+        let cursor_l = cursor % 10;
+        send_display_bus(&mut pins, true, false, 0b0011_0000 + cursor_h).await;
+        send_display_bus(&mut pins, true, false, 0b0011_0000 + cursor_l).await;
     }
 }
 
@@ -215,23 +242,23 @@ async fn main(spawner: Spawner) -> ! {
 
     spawner
         .spawn(display_task(
-            p.PA2.into(),  // rs
-            p.PA3.into(),  // rw
-            p.PA4.into(),  // enable
-            p.PA5.into(),  // d0
-            p.PA6.into(),  // d1
-            p.PA7.into(),  // d2
-            p.PB0.into(),  // d3
-            p.PB1.into(),  // d4
-            p.PA8.into(),  // d5
-            p.PA9.into(),  // d6
-            p.PA10.into(), // d7
+            p.PB0.into(), // rs
+            p.PB1.into(), // rw
+            p.PA8.into(), // enable
+            p.PA0.into(), // d0
+            p.PA1.into(), // d1
+            p.PA2.into(), // d2
+            p.PA3.into(), // d3
+            p.PA4.into(), // d4
+            p.PA5.into(), // d5
+            p.PA6.into(), // d6
+            p.PA7.into(), // d7
         ))
         .unwrap();
 
     // 外部割り込みを使用する場合のタスク
     // ExtiInputを作成するために、ペリフェラル、EXTIライン、プル設定が必要
-    let exti_button = ExtiInput::new(p.PA0, p.EXTI0, ch32_hal::gpio::Pull::None);
+    let exti_button = ExtiInput::new(p.PA9, p.EXTI9, ch32_hal::gpio::Pull::None);
     spawner.spawn(jjy_task(exti_button)).unwrap();
 
     loop {
@@ -280,7 +307,7 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
     const ALLOWED_ERROR: f32 = 0.20;
 
     let mut buffer = [BitWidth::Unknown; 60];
-    let mut cursor = 0usize;
+    let mut cursor = 0u8;
     let mut recording = false;
     let mut previous_is_marker = false;
 
@@ -298,17 +325,14 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
 
         DRAW_CHANNEL
             .sender()
-            .send(StatusUpdate::JJYStatus(true))
+            .send(StatusUpdate::JJYOn(cursor))
             .await;
 
         exti_button.wait_for_rising_edge().await;
 
         let down_at = Instant::now().as_millis();
-        DRAW_CHANNEL
-            .sender()
-            .send(StatusUpdate::JJYStatus(false))
-            .await;
 
+        // 87 is Dirty Hack
         let elapsed_ms = (down_at - up_at) as u32;
 
         let bit = match elapsed_ms {
@@ -317,6 +341,8 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
             ms if is_in_width(ms, 800) => BitWidth::Long,
             _ => BitWidth::Unknown,
         };
+
+        DRAW_CHANNEL.sender().send(StatusUpdate::JJYOff(bit)).await;
 
         println!("{} ms ({})", elapsed_ms, bit.as_str());
 
@@ -481,7 +507,7 @@ async fn jjy_task(mut exti_button: ExtiInput<'static>) {
                 println!("{hour:0>2}:{minute:0>2} (day: {day})");
             }
 
-            buffer[cursor] = bit;
+            buffer[cursor as usize] = bit;
 
             cursor += 1;
             cursor %= 60;
